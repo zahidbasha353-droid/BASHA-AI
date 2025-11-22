@@ -3,153 +3,212 @@ import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
 import plotly.graph_objects as go
+from datetime import datetime
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="Basha AI V4 Sniper", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="Basha AI V5 Ultimate", page_icon="🚀", layout="wide")
+
+# --- CUSTOM CSS ---
+st.markdown("""
+<style>
+    .stMetric { background-color: #262730; border-radius: 10px; padding: 10px; }
+    div[data-testid="stMarkdownContainer"] > h1 { color: #00FF00; }
+</style>
+""", unsafe_allow_html=True)
 
 # --- SIDEBAR ---
-st.sidebar.title("🎯 BASHA AI V4.0")
-st.sidebar.info("Status: Sniper Mode Activated")
+st.sidebar.title("🚀 BASHA AI V5.0")
+st.sidebar.caption("Whale Detector | Fundamentals | Multi-Timeframe")
 mode = st.sidebar.radio("Trading Mode", ["☪️ Halal Swing (Safe)", "⚡ Index Scalper (Risky)"])
-capital = st.sidebar.number_input("Capital (₹)", 5000, step=1000)
+capital = st.sidebar.number_input("Capital (₹)", 10000, step=1000)
 
 # --- HELPER FUNCTIONS ---
-def get_data(ticker, period="1mo", interval="1d"):
+def get_data(ticker, period="1y", interval="1d"):
     data = yf.Ticker(ticker).history(period=period, interval=interval)
     if len(data) > 0:
+        # Indicators
         data.ta.rsi(length=14, append=True)
         data.ta.ema(length=50, append=True)
+        data.ta.ema(length=200, append=True) # Long term trend
+        # Volume SMA for Whale Detection
+        data['Vol_SMA'] = data['Volume'].rolling(window=20).mean()
         return data
     return None
 
-def plot_chart(df, ticker, buy_signal=False):
-    fig = go.Figure(data=[go.Candlestick(x=df.index,
+def check_whale(row):
+    """Check if Volume is 1.5x higher than average"""
+    if row['Volume'] > (1.5 * row['Vol_SMA']):
+        return "🐋 WHALE DETECTED"
+    return "Normal"
+
+def get_fundamentals(ticker):
+    """Fetch basic company info"""
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        return {
+            "PE Ratio": info.get('forwardPE', 'N/A'),
+            "Market Cap": info.get('marketCap', 'N/A'),
+            "Debt To Equity": info.get('debtToEquity', 'N/A'),
+            "Sector": info.get('sector', 'N/A')
+        }
+    except:
+        return None
+
+def plot_chart_v5(df, ticker, whale_signal):
+    fig = go.Figure()
+    
+    # Candlestick
+    fig.add_trace(go.Candlestick(x=df.index,
                 open=df['Open'], high=df['High'],
-                low=df['Low'], close=df['Close'], name=ticker)])
+                low=df['Low'], close=df['Close'], name="Price"))
     
-    # Add EMA Line
+    # EMA Lines
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_50'], line=dict(color='orange', width=1), name="EMA 50"))
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_200'], line=dict(color='blue', width=1), name="EMA 200 (Trend)"))
     
-    title_color = "green" if buy_signal else "white"
-    fig.update_layout(title=f"{ticker} Price Action", template="plotly_dark", height=500,
-                     title_font_color=title_color)
+    # Update Layout
+    title_text = f"{ticker} | {whale_signal}"
+    fig.update_layout(title=title_text, template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
+    
     st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# ☪️ MODE 1: HALAL SWING SNIPER
+# ☪️ MODE 1: HALAL ULTIMATE SWING
 # ==========================================
 if mode == "☪️ Halal Swing (Safe)":
-    st.title("☪️ Halal Sniper Dashboard")
-    st.caption("Clear Action | Stop Loss | Targets | Live Charts")
+    st.title("☪️ Halal Ultimate Dashboard")
     
-    halal_stocks = ["TATASTEEL.NS", "ASHOKLEY.NS", "WIPRO.NS", "INFY.NS", "HCLTECH.NS", "TITAN.NS", "SUNPHARMA.NS"]
+    # Main Watchlist
+    halal_stocks = ["TATASTEEL.NS", "ASHOKLEY.NS", "WIPRO.NS", "INFY.NS", "HCLTECH.NS", 
+                    "TITAN.NS", "SUNPHARMA.NS", "ULTRACEMCO.NS", "POWERGRID.NS", "MARUTI.NS"]
     
-    if st.button("🎯 SCAN MARKET"):
-        st.write("Analyzing Market Structure...")
-        
-        signals = []
-        for stock in halal_stocks:
-            try:
-                df = get_data(stock, period="6mo", interval="1d")
-                if df is not None:
-                    current_price = df['Close'].iloc[-1]
-                    rsi = df['RSI_14'].iloc[-1]
-                    ema = df['EMA_50'].iloc[-1]
-                    
-                    # STRATEGY: RSI Oversold + Above EMA or Reversal
-                    action = "⚪ WAIT"
-                    color = "white"
-                    
-                    if rsi < 40:
-                        action = "🟢 BUY NOW"
-                    elif rsi > 70:
-                        action = "🔴 SELL/BOOK"
-                    
-                    # Calculate SL and Target
-                    sl = int(current_price * 0.95) # 5% Loss limit
-                    tgt = int(current_price * 1.10) # 10% Profit Target
-                    
-                    signals.append({
-                        "Stock": stock,
-                        "Price": f"₹{round(current_price,1)}",
-                        "RSI": round(rsi,1),
-                        "ACTION": action,
-                        "🛑 Stop Loss": f"₹{sl}",
-                        "🎯 Target": f"₹{tgt}"
-                    })
-            except:
-                continue
-        
-        # Show Table
-        df_res = pd.DataFrame(signals)
-        st.dataframe(df_res, use_container_width=True)
-        
-        # --- CHART SECTION ---
-        st.write("---")
-        st.subheader("📊 Live Chart Analysis")
-        selected = st.selectbox("Select Stock to View Chart", halal_stocks)
-        
-        df_chart = get_data(selected, period="6mo", interval="1d")
-        if df_chart is not None:
-            # Show Key Levels
-            curr = df_chart['Close'].iloc[-1]
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Current Price", f"₹{round(curr,2)}")
-            c2.metric("Stop Loss (Support)", f"₹{int(curr*0.95)}")
-            c3.metric("Target (Resistance)", f"₹{int(curr*1.10)}")
+    tab1, tab2 = st.tabs(["🚀 AI SCANNER", "🔬 DEEP ANALYSIS"])
+    
+    with tab1:
+        if st.button("🚀 RUN V5 SCANNER"):
+            st.write("Scanning Price, Volume, and Trends...")
+            results = []
             
-            plot_chart(df_chart, selected)
+            scan_bar = st.progress(0)
+            for i, stock in enumerate(halal_stocks):
+                scan_bar.progress((i+1)/len(halal_stocks))
+                try:
+                    df = get_data(stock)
+                    if df is not None:
+                        curr = df.iloc[-1]
+                        rsi = curr['RSI_14']
+                        ema50 = curr['EMA_50']
+                        ema200 = curr['EMA_200']
+                        whale = check_whale(curr)
+                        
+                        # SCORING SYSTEM (The Brain)
+                        score = 0
+                        if rsi < 45: score += 20        # Cheap
+                        if curr['Close'] > ema200: score += 30 # Long term Up Trend
+                        if "WHALE" in whale: score += 30 # Big Money Flow
+                        if curr['Close'] > ema50: score += 20  # Short term momentum
+                        
+                        action = "⚪ WAIT"
+                        if score >= 80: action = "🔥 STRONG BUY"
+                        elif score >= 50: action = "✅ BUY WATCH"
+                        elif score < 30: action = "🔴 AVOID"
+                        
+                        # Targets
+                        sl = int(curr['Close'] * 0.94)
+                        tgt = int(curr['Close'] * 1.12)
+                        
+                        results.append({
+                            "Stock": stock,
+                            "Price": f"₹{round(curr['Close'],1)}",
+                            "Score": f"{score}/100",
+                            "ACTION": action,
+                            "Volume": whale,
+                            "SL": sl,
+                            "Target": tgt
+                        })
+                except:
+                    continue
+            
+            scan_bar.empty()
+            df_res = pd.DataFrame(results)
+            
+            # Color Formatting
+            st.dataframe(df_res.style.map(lambda x: 'color: #00FF00; font-weight: bold' if 'BUY' in str(x) else 'color: white'))
+            
+    with tab2:
+        st.header("🔬 Fundamental & Technical Deep Dive")
+        selected = st.selectbox("Select Stock for Checkup", halal_stocks)
+        
+        if st.button("🔍 ANALYZE STOCK"):
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.subheader("🏢 Fundamentals")
+                info = get_fundamentals(selected)
+                if info:
+                    st.metric("Sector", info['Sector'])
+                    st.metric("Market Cap", f"₹ {info['Market Cap']}")
+                    st.metric("P/E Ratio", info['PE Ratio'])
+                    st.metric("Debt/Equity", info['Debt To Equity'], delta_color="inverse")
+                    if info['Debt To Equity'] != 'N/A' and float(info['Debt To Equity']) > 1.0:
+                        st.error("⚠️ High Debt Warning!")
+                    else:
+                        st.success("✅ Debt Looks Safe")
+            
+            with col2:
+                st.subheader("📊 Technical Chart")
+                df_chart = get_data(selected)
+                if df_chart is not None:
+                    last_row = df_chart.iloc[-1]
+                    whale_status = check_whale(last_row)
+                    plot_chart_v5(df_chart, selected, whale_status)
 
 # ==========================================
-# ⚡ MODE 2: SCALPER SNIPER (INDEX)
+# ⚡ MODE 2: SCALPER ULTIMATE
 # ==========================================
 elif mode == "⚡ Index Scalper (Risky)":
-    st.title("⚡ Index Scalper Matrix")
-    st.warning("⚠️ High Risk: Future & Options (Nifty/BankNifty)")
+    st.title("⚡ Index Scalper V5 (Whale Tracker)")
     
     idx = st.selectbox("Select Index", ["^NSEI", "^NSEBANK"], format_func=lambda x: "NIFTY 50" if x == "^NSEI" else "BANK NIFTY")
     
-    if st.button("⚡ ANALYZE SIGNAL"):
-        df = get_data(idx, period="5d", interval="5m")
+    if st.button("⚡ SCAN INDEX"):
+        df = get_data(idx, period="5d", interval="5m") # 5 Minute Data
         
         if df is not None:
-            curr = df['Close'].iloc[-1]
-            rsi = df['RSI_14'].iloc[-1]
-            ema = df['EMA_50'].iloc[-1]
+            curr = df.iloc[-1]
+            rsi = curr['RSI_14']
+            whale = check_whale(curr)
             
-            # MATRIX DECISION
+            # V5 SCALPING MATRIX
             signal = "SIDEWAYS 😴"
-            signal_color = "gray"
+            confidence = "Low"
             
-            if curr > ema and rsi < 50:
-                signal = "🚀 CALL (BUY) NOW"
-                signal_color = "green"
-                sl = curr - 50
-                tgt = curr + 100
-            elif curr < ema and rsi > 50:
-                signal = "📉 PUT (SELL) NOW"
-                signal_color = "red"
-                sl = curr + 50
-                tgt = curr - 100
+            # Bullish Case
+            if curr['Close'] > curr['EMA_50'] and rsi < 60:
+                signal = "🚀 CALL (BUY)"
+                confidence = "High" if "WHALE" in whale else "Medium"
+                sl = int(curr['Close'] - 40)
+                tgt = int(curr['Close'] + 80)
+                
+            # Bearish Case
+            elif curr['Close'] < curr['EMA_50'] and rsi > 40:
+                signal = "📉 PUT (SELL)"
+                confidence = "High" if "WHALE" in whale else "Medium"
+                sl = int(curr['Close'] + 40)
+                tgt = int(curr['Close'] - 80)
+            
             else:
-                sl = 0
-                tgt = 0
+                sl, tgt = 0, 0
+
+            # DISPLAY DASHBOARD
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Current Price", f"₹{round(curr['Close'],2)}", f"{whale}")
+            c2.metric("Signal", signal, f"Conf: {confidence}")
+            c3.metric("RSI Strength", f"{round(rsi, 2)}")
             
-            # DISPLAY BIG SIGNAL
-            st.markdown(f"""
-            <div style='text-align: center; background-color: #1e1e1e; padding: 20px; border-radius: 10px; border: 2px solid {signal_color};'>
-                <h2 style='color: {signal_color}; margin:0;'>{signal}</h2>
-                <h1 style='font-size: 50px; margin:0;'>₹{round(curr, 2)}</h1>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # TARGETS
             if sl > 0:
-                c1, c2 = st.columns(2)
-                c1.error(f"🛑 STOP LOSS: {int(sl)}")
-                c2.success(f"🎯 TARGET: {int(tgt)}")
+                st.success(f"🎯 TARGET: {tgt} | 🛑 STOP LOSS: {sl}")
             
-            # CHART
-            plot_chart(df, "Index Live")
-            
-            st.dataframe(df.tail(5))
+            plot_chart_v5(df, idx, whale)
+            st.caption("Showing last 5 days of 5-minute candles")
